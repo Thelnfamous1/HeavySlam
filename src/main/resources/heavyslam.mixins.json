@@ -1,0 +1,13 @@
+{
+  "required": true,
+  "package": "me.Thelnfamous1.heavyslam.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "refmap": "heavyslam.refmap.json",
+  "mixins": [
+    "LivingEntityMixin"
+  ],
+  "client": [
+    "client.LivingEntityRendererMixin"
+  ],
+  "minVersion": "0.8.5"
+}
