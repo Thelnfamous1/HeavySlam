@@ -12,8 +12,10 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.AgeableMob;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.NeutralMob;
 import net.minecraft.world.entity.OwnableEntity;
 import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.ai.memory.MemoryModuleType;
 import net.minecraft.world.entity.animal.WaterAnimal;
 import net.minecraft.world.entity.decoration.ArmorStand;
 import net.minecraft.world.entity.monster.Enemy;
@@ -22,6 +24,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LevelAccessor;
 import net.minecraft.world.phys.Vec3;
 
+import java.util.Optional;
 import java.util.function.Predicate;
 
 public class GroundPound {
@@ -36,7 +39,9 @@ public class GroundPound {
     public void onImpact(LivingEntity groundPounder) {
         float radius = 5 + Mth.clamp(groundPounder.fallDistance, 0, 5);
         if(!groundPounder.level.isClientSide){
-            shockwave(groundPounder.level, groundPounder, radius, 8 + Mth.floor(groundPounder.fallDistance * 2));
+            float damage = 8 + Mth.floor(groundPounder.fallDistance * 2);
+            damage = Mth.floor(damage * 0.9F); // Manually reduce damage by 10%
+            shockwave(groundPounder.level, groundPounder, radius, damage);
             groundPounder.level.playSound(
                     null, groundPounder.getX(), groundPounder.getY(), groundPounder.getZ(), SoundEvents.GENERIC_EXPLODE, groundPounder.getSoundSource(), 1.0F, 1.0F
             );
@@ -80,6 +85,7 @@ public class GroundPound {
                     // knockback
                     Vec3 distanceVec = target.position().subtract(groundPounder.position());
                     double knockbackPower = getKnockbackPower(groundPounder, target, distanceVec, radius);
+                    knockbackPower *= 0.9F; // Manually reduce knockback by 10%
                     if(HeavySlamMod.DEBUG_GROUND_POUND)
                         HeavySlamMod.LOGGER.info("Applying shockwave knockback of {} to {}", knockbackPower, target);
                     Vec3 knockbackVec = distanceVec.normalize().scale(knockbackPower);
@@ -125,8 +131,20 @@ public class GroundPound {
             boolean inRange = groundPounder.distanceToSqr(target) <= Mth.square(radius);
             boolean canSee = groundPounder.hasLineOfSight(target);
             boolean isNotPassive = (!(target instanceof AgeableMob) && !(target instanceof WaterAnimal)) || target instanceof Enemy;
-            return notSpectator && notSelf && notAlly && flag1 && flag2 && inRange && canSee && isNotPassive;
+            boolean isAggressive = isAngryAt(target, groundPounder).orElse(true);
+            return notSpectator && notSelf && notAlly && flag1 && flag2 && inRange && canSee && isNotPassive && isAggressive;
         };
+    }
+
+    private static Optional<Boolean> isAngryAt(LivingEntity entity, LivingEntity target) {
+        if(entity instanceof NeutralMob neutralMob){
+            return Optional.of(neutralMob.isAngryAt(target));
+        }
+        if(entity.getBrain().hasMemoryValue(MemoryModuleType.ANGRY_AT)){
+            return entity.getBrain().getMemory(MemoryModuleType.ANGRY_AT)
+                    .map(angryAt -> target.getUUID().equals(angryAt));
+        }
+        return Optional.empty();
     }
 
     private static double getKnockbackPower(LivingEntity groundPounder, LivingEntity target, Vec3 distanceVec, double radius) {

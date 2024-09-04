@@ -29,8 +29,9 @@ public abstract class LivingEntityMixin extends Entity implements GroundPounder 
 
     @Override
     public void heavyslam$setGroundPound(@Nullable GroundPound groundPound) {
+        boolean changed = this.heavyslam$groundPound != groundPound;
         this.heavyslam$groundPound = groundPound;
-        if(!this.level.isClientSide){
+        if(!this.level.isClientSide && changed){
             HeavySlamNetwork.SYNC_CHANNEL.send(PacketDistributor.TRACKING_ENTITY_AND_SELF.with(() -> this), new ClientboundSyncGroundPoundPacket(this.getId(), this.heavyslam$groundPound));
         }
     }

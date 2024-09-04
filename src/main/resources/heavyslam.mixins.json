@@ -4,6 +4,7 @@
   "compatibilityLevel": "JAVA_17",
   "refmap": "heavyslam.refmap.json",
   "mixins": [
+    "EntityMixin",
     "LivingEntityMixin"
   ],
   "client": [
