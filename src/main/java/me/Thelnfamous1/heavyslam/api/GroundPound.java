@@ -1,6 +1,7 @@
 package me.Thelnfamous1.heavyslam.api;
 
 import me.Thelnfamous1.heavyslam.HeavySlamMod;
+import me.Thelnfamous1.heavyslam.config.HeavySlamConfig;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.BlockParticleOption;
 import net.minecraft.core.particles.ParticleOptions;
@@ -9,10 +10,7 @@ import net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Mth;
 import net.minecraft.world.damagesource.DamageSource;
-import net.minecraft.world.entity.AgeableMob;
-import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.NeutralMob;
-import net.minecraft.world.entity.OwnableEntity;
+import net.minecraft.world.entity.*;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.memory.MemoryModuleType;
 import net.minecraft.world.entity.animal.WaterAnimal;
@@ -36,16 +34,28 @@ public class GroundPound {
     }
 
     public void onImpact(LivingEntity groundPounder) {
-        float radius = 5 + Mth.clamp(groundPounder.fallDistance, 0, 5);
+        double radius = getAttackRadius(groundPounder);
         if(!groundPounder.level.isClientSide){
-            float damage = 8 + Mth.floor(groundPounder.fallDistance * 2);
-            damage = Mth.floor(damage * 0.9F); // Manually reduce damage by 10%
-            shockwave(groundPounder.level, groundPounder, radius, damage);
+            if(HeavySlamMod.DEBUG_GROUND_POUND)
+                HeavySlamMod.LOGGER.info("{} fell for {} blocks and created a shockwave of radius {} blocks!", groundPounder, groundPounder.fallDistance, radius);
+            shockwave(groundPounder.level, groundPounder, radius);
             groundPounder.level.playSound(
-                    null, groundPounder.getX(), groundPounder.getY(), groundPounder.getZ(), HeavySlamMod.GROUND_POUND_IMPACT.get(), groundPounder.getSoundSource(), radius, 1.0F
+                    null, groundPounder.getX(), groundPounder.getY(), groundPounder.getZ(), HeavySlamMod.GROUND_POUND_IMPACT.get(), groundPounder.getSoundSource(), (float)radius, 1.0F
             );
         } else{
             spawnSmashAttackParticles(groundPounder.level, groundPounder.getOnPos(), 750, radius);
+        }
+    }
+
+    private static double getAttackRadius(LivingEntity groundPounder) {
+        double attackRadius = Mth.clamp(
+                HeavySlamConfig.SERVER.groundPoundRadiusBase.get() + (groundPounder.fallDistance * HeavySlamConfig.SERVER.groundPoundRadiusFallDistanceScale.get()),
+                0,
+                HeavySlamConfig.SERVER.groundPoundRadiusMax.get());
+        if(HeavySlamConfig.SERVER.groundPoundRadiusFloor.get()){
+            return Mth.floor(attackRadius);
+        } else{
+            return attackRadius;
         }
     }
 
@@ -74,17 +84,18 @@ public class GroundPound {
         }
     }
 
-    private static void shockwave(Level pLevel, LivingEntity groundPounder, double radius, float damage) {
+    private static void shockwave(Level pLevel, LivingEntity groundPounder, double radius) {
         pLevel.getEntitiesOfClass(LivingEntity.class, groundPounder.getBoundingBox().inflate(radius), shockwavePredicate(groundPounder, radius))
                 .forEach(target -> {
+                    Vec3 distanceVec = target.position().subtract(groundPounder.position());
+                    double distanceToTarget = distanceVec.length();
                     // damage
+                    float damage = getAttackDamage(groundPounder, target, radius, distanceToTarget);
                     if(HeavySlamMod.DEBUG_GROUND_POUND)
                         HeavySlamMod.LOGGER.info("Applying shockwave damage of {} to {}", damage, target);
                     target.hurt(groundPounder instanceof Player player ? DamageSource.playerAttack(player) : DamageSource.mobAttack(groundPounder), damage);
                     // knockback
-                    Vec3 distanceVec = target.position().subtract(groundPounder.position());
-                    double knockbackPower = getKnockbackPower(groundPounder, target, distanceVec, radius);
-                    knockbackPower *= 0.9F; // Manually reduce knockback by 10%
+                    double knockbackPower = getKnockbackPower(groundPounder, target, radius, distanceToTarget);
                     if(HeavySlamMod.DEBUG_GROUND_POUND)
                         HeavySlamMod.LOGGER.info("Applying shockwave knockback of {} to {}", knockbackPower, target);
                     Vec3 knockbackVec = distanceVec.normalize().scale(knockbackPower);
@@ -98,16 +109,16 @@ public class GroundPound {
     }
 
     private static Predicate<LivingEntity> shockwavePredicate(LivingEntity groundPounder, double radius) {
-        return target -> {
+        return hitTarget -> {
             boolean notSpectator;
             boolean notSelf;
             boolean notAlly;
             boolean flag;
             attackable: {
-                notSpectator = !target.isSpectator();
-                notSelf = target != groundPounder;
-                notAlly = !groundPounder.isAlliedTo(target);
-                if (target instanceof OwnableEntity ownableEntity && groundPounder.getUUID().equals(ownableEntity.getOwnerUUID())) {
+                notSpectator = !hitTarget.isSpectator();
+                notSelf = hitTarget != groundPounder;
+                notAlly = !groundPounder.isAlliedTo(hitTarget);
+                if (hitTarget instanceof OwnableEntity ownableEntity && groundPounder.getUUID().equals(ownableEntity.getOwnerUUID())) {
                     flag = true;
                     break attackable;
                 }
@@ -118,7 +129,7 @@ public class GroundPound {
             boolean flag1;
             armorStand: {
                 flag1 = !flag;
-                if (target instanceof ArmorStand armorstand && armorstand.isMarker()) {
+                if (hitTarget instanceof ArmorStand armorstand && armorstand.isMarker()) {
                     flag = false;
                     break armorStand;
                 }
@@ -127,29 +138,61 @@ public class GroundPound {
             }
 
             boolean flag2 = flag;
-            boolean inRange = groundPounder.distanceToSqr(target) <= Mth.square(radius);
-            boolean canSee = groundPounder.hasLineOfSight(target);
-            boolean isNotPassive = (!(target instanceof AgeableMob) && !(target instanceof WaterAnimal)) || target instanceof Enemy;
-            boolean isAggressive = isAngryAt(target, groundPounder).orElse(true);
+            boolean inRange = groundPounder.distanceToSqr(hitTarget) <= Mth.square(radius);
+            boolean canSee = groundPounder.hasLineOfSight(hitTarget);
+            boolean isNotPassive = (!(hitTarget instanceof AgeableMob) && !(hitTarget instanceof WaterAnimal)) || hitTarget instanceof Enemy;
+            Optional<Boolean> isAngryAt = isAngryAt(hitTarget, groundPounder);
+            boolean isAggressive = isAngryAt.orElse(true);
+            if(!isNotPassive && isAngryAt.orElse(false)){
+                isNotPassive = true;
+            }
             return notSpectator && notSelf && notAlly && flag1 && flag2 && inRange && canSee && isNotPassive && isAggressive;
         };
     }
 
     private static Optional<Boolean> isAngryAt(LivingEntity entity, LivingEntity target) {
         if(entity instanceof NeutralMob neutralMob){
-            return Optional.of(neutralMob.isAngryAt(target));
+            return Optional.of((target.getType() == EntityType.PLAYER && neutralMob.isAngryAtAllPlayers(target.level)) || target.getUUID().equals(neutralMob.getPersistentAngerTarget()));
         }
         if(entity.getBrain().hasMemoryValue(MemoryModuleType.ANGRY_AT)){
             return entity.getBrain().getMemory(MemoryModuleType.ANGRY_AT)
-                    .map(angryAt -> target.getUUID().equals(angryAt));
+                    .map(angryAt -> {
+                        boolean universal = false;
+                        if(entity.getBrain().hasMemoryValue(MemoryModuleType.UNIVERSAL_ANGER)){
+                            universal = target.getType() == EntityType.PLAYER && entity.getBrain().getMemory(MemoryModuleType.UNIVERSAL_ANGER).orElse(false);
+                        }
+                        return universal || target.getUUID().equals(angryAt);
+                    });
         }
         return Optional.empty();
     }
 
-    private static double getKnockbackPower(LivingEntity groundPounder, LivingEntity target, Vec3 distanceVec, double radius) {
-        return (radius - distanceVec.length())
-                * 0.7F
-                * (double)(groundPounder.fallDistance > 5.0F ? 2 : 1)
-                * (1.0 - target.getAttributeValue(Attributes.KNOCKBACK_RESISTANCE));
+    private static float getAttackDamage(LivingEntity groundPounder, LivingEntity target, double radius, double distanceToTarget){
+        double distanceFromRadius = radius - distanceToTarget;
+        double attackDamage = Mth.clamp(
+                HeavySlamConfig.SERVER.groundPoundDamageBase.get() + (distanceFromRadius * HeavySlamConfig.SERVER.groundPoundDamageScale.get()),
+                0,
+                HeavySlamConfig.SERVER.groundPoundDamageMax.get());
+        if(HeavySlamConfig.SERVER.groundPoundDamageFloor.get()){
+            return Mth.floor(attackDamage);
+        } else {
+            return (float) attackDamage;
+        }
+    }
+
+    private static double getKnockbackPower(LivingEntity groundPounder, LivingEntity target, double radius, double distanceToTarget) {
+        double distanceFromRadius = radius - distanceToTarget;
+        double knockbackPower = Mth.clamp(
+                HeavySlamConfig.SERVER.groundPoundKnockbackBase.get() + (distanceFromRadius * HeavySlamConfig.SERVER.groundPoundKnockbackScale.get()),
+                0,
+                HeavySlamConfig.SERVER.groundPoundDamageMax.get());
+        if(HeavySlamConfig.SERVER.groundPoundKnockbackResistance.get()){
+            knockbackPower *= (1.0D - target.getAttributeValue(Attributes.KNOCKBACK_RESISTANCE));
+        }
+        if(HeavySlamConfig.SERVER.groundPoundKnockbackFloor.get()){
+            return Mth.floor(knockbackPower);
+        } else{
+            return knockbackPower;
+        }
     }
 }

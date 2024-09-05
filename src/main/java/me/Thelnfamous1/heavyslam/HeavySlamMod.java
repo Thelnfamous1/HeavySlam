@@ -5,6 +5,7 @@ import com.mojang.serialization.Codec;
 import it.unimi.dsi.fastutil.ints.Int2BooleanArrayMap;
 import me.Thelnfamous1.heavyslam.api.GroundPound;
 import me.Thelnfamous1.heavyslam.api.GroundPounder;
+import me.Thelnfamous1.heavyslam.config.HeavySlamConfig;
 import me.Thelnfamous1.heavyslam.network.HeavySlamNetwork;
 import net.minecraft.core.particles.BlockParticleOption;
 import net.minecraft.core.particles.ParticleOptions;
@@ -21,9 +22,12 @@ import net.minecraftforge.event.server.ServerStoppedEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.LogicalSide;
+import net.minecraftforge.fml.ModLoadingContext;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.config.ModConfig;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+import net.minecraftforge.fml.loading.FMLEnvironment;
 import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraftforge.registries.RegistryObject;
@@ -36,7 +40,7 @@ import java.util.function.Function;
 public class HeavySlamMod {
     public static final String MODID = "heavyslam";
     public static final Logger LOGGER = LogUtils.getLogger();
-    public static final boolean DEBUG_GROUND_POUND = false;
+    public static final boolean DEBUG_GROUND_POUND = !FMLEnvironment.production;
 
     private static final DeferredRegister<ParticleType<?>> PARTICLE_TYPES = DeferredRegister.create(ForgeRegistries.PARTICLE_TYPES, MODID);
 
@@ -62,6 +66,7 @@ public class HeavySlamMod {
         IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
         PARTICLE_TYPES.register(modEventBus);
         SOUND_EVENTS.register(modEventBus);
+        ModLoadingContext.get().registerConfig(ModConfig.Type.SERVER, HeavySlamConfig.serverSpec);
     }
 
     @SubscribeEvent
