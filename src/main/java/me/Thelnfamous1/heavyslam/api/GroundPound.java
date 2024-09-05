@@ -7,7 +7,6 @@ import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.sounds.SoundEvents;
 import net.minecraft.util.Mth;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.AgeableMob;
@@ -43,7 +42,7 @@ public class GroundPound {
             damage = Mth.floor(damage * 0.9F); // Manually reduce damage by 10%
             shockwave(groundPounder.level, groundPounder, radius, damage);
             groundPounder.level.playSound(
-                    null, groundPounder.getX(), groundPounder.getY(), groundPounder.getZ(), SoundEvents.GENERIC_EXPLODE, groundPounder.getSoundSource(), 1.0F, 1.0F
+                    null, groundPounder.getX(), groundPounder.getY(), groundPounder.getZ(), HeavySlamMod.GROUND_POUND_IMPACT.get(), groundPounder.getSoundSource(), radius, 1.0F
             );
         } else{
             spawnSmashAttackParticles(groundPounder.level, groundPounder.getOnPos(), 750, radius);

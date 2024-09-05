@@ -9,6 +9,8 @@ import me.Thelnfamous1.heavyslam.network.HeavySlamNetwork;
 import net.minecraft.core.particles.BlockParticleOption;
 import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.core.particles.ParticleType;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.sounds.SoundEvent;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraftforge.event.TickEvent;
@@ -48,9 +50,18 @@ public class HeavySlamMod {
         });
     }
 
+    private static final DeferredRegister<SoundEvent> SOUND_EVENTS = DeferredRegister.create(ForgeRegistries.SOUND_EVENTS, MODID);
+
+    public static final RegistryObject<SoundEvent> GROUND_POUND_IMPACT = registerSoundEvent("ground_pound_impact");
+
+    private static RegistryObject<SoundEvent> registerSoundEvent(String name) {
+        return SOUND_EVENTS.register(name, () -> new SoundEvent(new ResourceLocation(MODID, name)));
+    }
+
     public HeavySlamMod() {
         IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
         PARTICLE_TYPES.register(modEventBus);
+        SOUND_EVENTS.register(modEventBus);
     }
 
     @SubscribeEvent
